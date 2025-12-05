@@ -170,9 +170,11 @@ const VacationTracker = () => {
     const start = new Date(newStart);
     const end = new Date(newEnd);
     
+    const userName = currentUser || localStorage.getItem('currentUserName') || '';
+    
     return vacations.some(vacation => {
       if (excludeId && vacation.id === excludeId) return false;
-      if (vacation.employee.toLowerCase() !== currentUser.toLowerCase()) return false;
+      if (vacation.employee.toLowerCase() !== userName.toLowerCase()) return false;
       
       const vStart = new Date(vacation.startDate);
       const vEnd = new Date(vacation.endDate);
@@ -319,7 +321,10 @@ const VacationTracker = () => {
     today.setHours(0, 0, 0, 0);
     const endDate = new Date(vacation.endDate);
     
-    return vacation.employee.toLowerCase() === currentUser.toLowerCase() && endDate >= today;
+    // Načti jméno z localStorage, pokud currentUser je prázdný
+    const userName = currentUser || localStorage.getItem('currentUserName') || '';
+    
+    return userName && vacation.employee.toLowerCase() === userName.toLowerCase() && endDate >= today;
   };
 
   const getCurrentAndFutureVacations = () => {
