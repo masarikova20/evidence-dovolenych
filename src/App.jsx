@@ -44,11 +44,11 @@ const VacationTracker = () => {
     setCurrentUser(name);
   };
 
-  const loadVacations = () => {
+  const loadVacations = async () => {
     try {
-      const saved = localStorage.getItem('team-vacations');
-      if (saved) {
-        setVacations(JSON.parse(saved));
+      const result = await window.storage.get('team-vacations', true);
+      if (result && result.value) {
+        setVacations(JSON.parse(result.value));
       }
     } catch (error) {
       console.log('Zatím nejsou žádné dovolené');
@@ -57,9 +57,9 @@ const VacationTracker = () => {
     }
   };
 
-  const saveVacations = (updatedVacations) => {
+  const saveVacations = async (updatedVacations) => {
     try {
-      localStorage.setItem('team-vacations', JSON.stringify(updatedVacations));
+      await window.storage.set('team-vacations', JSON.stringify(updatedVacations), true);
       setVacations(updatedVacations);
     } catch (error) {
       showNotification('Chyba při ukládání dat', 'error');
@@ -163,6 +163,7 @@ const VacationTracker = () => {
     setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
     showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
   };
+
   const startEdit = (vacation) => {
     setEditingId(vacation.id);
     setEditData({
@@ -331,6 +332,7 @@ const VacationTracker = () => {
     
     setCurrentDate(newDate);
   };
+
   const renderWeekView = () => {
     const startOfWeek = new Date(currentDate);
     const day = startOfWeek.getDay();
