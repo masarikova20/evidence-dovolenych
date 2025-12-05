@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, History, Users, Trash2, Lock, Edit2, X, Save, ChevronLeft, ChevronRight, List } from 'lucide-react';
+import { Calendar, Plus, History, Users, Trash2, Lock, Edit2, X, Save, ChevronLeft, ChevronRight, List, Download, CheckCircle, XCircle } from 'lucide-react';
 
 const VacationTracker = () => {
   const [vacations, setVacations] = useState([]);
@@ -11,6 +11,7 @@ const VacationTracker = () => {
   const [editingId, setEditingId] = useState(null);
   const [viewMode, setViewMode] = useState('list');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [notification, setNotification] = useState(null);
   
   const [formData, setFormData] = useState({
     employee: '',
@@ -61,23 +62,73 @@ const VacationTracker = () => {
       localStorage.setItem('team-vacations', JSON.stringify(updatedVacations));
       setVacations(updatedVacations);
     } catch (error) {
-      alert('Chyba při ukládání dat');
+      showNotification('Chyba při ukládání dat', 'error');
     }
   };
 
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
   const handleAdminLogin = () => {
-    if (adminPassword === 'admin123') {
+    if (adminPassword === 'DovoleneAI123') {
       setIsAdmin(true);
       setShowAdminLogin(false);
       setAdminPassword('');
     } else {
-      alert('Nesprávné heslo');
+      showNotification('Nesprávné heslo', 'error');
     }
+  };
+
+  const checkOverlap = (newStart, newEnd, excludeId = null) => {
+    const start = new Date(newStart);
+    const end = new Date(newEnd);
+    
+    return vacations.some(vacation => {
+      if (excludeId && vacation.id === excludeId) return false;
+      if (vacation.employee.toLowerCase() !== currentUser.toLowerCase()) return false;
+      
+      const vStart = new Date(vacation.startDate);
+      const vEnd = new Date(vacation.endDate);
+      
+      return (start <= vEnd && end >= vStart);
+    });
+  };
+
+  const exportToExcel = () => {
+    const allVacations = [...vacations].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+    
+    let csv = '\uFEFF';
+    csv += 'Jméno,Typ volna,Od,Do,Počet dní,Stav\n';
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    allVacations.forEach(v => {
+      const endDate = new Date(v.endDate);
+      const status = endDate >= today ? 'Aktuální/Plánované' : 'Historie';
+      
+      csv += `"${v.employee}","${getTypeLabel(v.type)}","${formatDate(v.startDate)}","${formatDate(v.endDate)}","${v.days}","${status}"\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `dovolene_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showNotification('Data byla exportována', 'success');
   };
 
   const addVacation = () => {
     if (!formData.employee || !formData.startDate || !formData.endDate) {
-      alert('❌ Vyplň prosím všechna pole');
+      showNotification('Vyplň prosím všechna povinná pole', 'error');
       return;
     }
 
@@ -85,7 +136,12 @@ const VacationTracker = () => {
     const end = new Date(formData.endDate);
     
     if (end < start) {
-      alert('Konec dovolené nemůže být před začátkem');
+      showNotification('Konec dovolené nemůže být před začátkem', 'error');
+      return;
+    }
+
+    if (checkOverlap(formData.startDate, formData.endDate)) {
+      showNotification('Pro tento termín již máš zadanou nedostupnost. Proveď editaci v záložce Seznam.', 'error');
       return;
     }
 
@@ -105,9 +161,8 @@ const VacationTracker = () => {
     saveVacations(updatedVacations);
     
     setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
-    alert('✅ Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.');
+    showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
   };
-
   const startEdit = (vacation) => {
     setEditingId(vacation.id);
     setEditData({
@@ -124,7 +179,7 @@ const VacationTracker = () => {
 
   const saveEdit = (vacationId) => {
     if (!editData.startDate || !editData.endDate) {
-      alert('Vyplň všechna pole');
+      showNotification('Vyplň všechna pole', 'error');
       return;
     }
 
@@ -132,7 +187,12 @@ const VacationTracker = () => {
     const end = new Date(editData.endDate);
     
     if (end < start) {
-      alert('Konec dovolené nemůže být před začátkem');
+      showNotification('Konec dovolené nemůže být před začátkem', 'error');
+      return;
+    }
+
+    if (checkOverlap(editData.startDate, editData.endDate, vacationId)) {
+      showNotification('Pro tento termín již máš zadanou nedostupnost.', 'error');
       return;
     }
 
@@ -146,12 +206,14 @@ const VacationTracker = () => {
 
     saveVacations(updatedVacations);
     setEditingId(null);
+    showNotification('Záznam byl upraven', 'success');
   };
 
   const deleteVacation = (id) => {
     if (confirm('Opravdu smazat tento záznam?')) {
       const updatedVacations = vacations.filter(v => v.id !== id);
       saveVacations(updatedVacations);
+      showNotification('Záznam byl smazán', 'success');
     }
   };
 
@@ -269,7 +331,6 @@ const VacationTracker = () => {
     
     setCurrentDate(newDate);
   };
-
   const renderWeekView = () => {
     const startOfWeek = new Date(currentDate);
     const day = startOfWeek.getDay();
@@ -424,6 +485,15 @@ const VacationTracker = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
+      {notification && (
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 ${
+          notification.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+        }`}>
+          {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+          <span className="font-medium">{notification.message}</span>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 md:p-8 text-white">
@@ -487,7 +557,6 @@ const VacationTracker = () => {
                       Přihlásit
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Demo heslo: admin123</p>
                 </div>
               )}
               
@@ -632,11 +701,11 @@ const VacationTracker = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-pink-300 rounded"></div>
-                    <span>Dopoledne</span>
+                    <span>Dopoledne dovolená</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-green-300 rounded"></div>
-                    <span>Odpoledne</span>
+                    <span>Odpoledne dovolená</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-purple-500 rounded"></div>
@@ -800,12 +869,21 @@ const VacationTracker = () => {
 
             {isAdmin && (
               <div>
-                <div className="flex items-center gap-2 mb-6">
-                  <History className="w-7 h-7 text-gray-600" />
-                  <h2 className="text-2xl font-bold text-gray-800">Historie a statistiky</h2>
-                  <span className="ml-2 px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium">
-                    Pouze admin
-                  </span>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <History className="w-7 h-7 text-gray-600" />
+                    <h2 className="text-2xl font-bold text-gray-800">Historie a statistiky</h2>
+                    <span className="ml-2 px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium">
+                      Pouze admin
+                    </span>
+                  </div>
+                  <button
+                    onClick={exportToExcel}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    <Download className="w-5 h-5" />
+                    Stáhnout data (Excel)
+                  </button>
                 </div>
 
                 {employeeStats.length > 0 && (
@@ -870,8 +948,9 @@ const VacationTracker = () => {
             <li>• <strong>Všichni</strong> vidí aktuální a plánované dovolené</li>
             <li>• <strong>Všichni</strong> mohou zadávat nové dovolené pomocí formuláře</li>
             <li>• <strong>Můžeš editovat/rušit</strong> pouze své dovolené (dokud neuplynou)</li>
+            <li>• <strong>Kontrola překryvů:</strong> Systém nedovolí zadat duplicitní záznamy</li>
             <li>• <strong>Přepínej zobrazení:</strong> Týden / Měsíc / Seznam</li>
-            <li>• <strong>Pouze admin</strong> vidí statistiky čerpání a kompletní historii</li>
+            <li>• <strong>Pouze admin</strong> vidí statistiky čerpání, historii a může exportovat data</li>
             <li>• Zadávej své jméno vždy stejně, aby ti systém poznal tvoje dovolené</li>
           </ul>
         </div>
