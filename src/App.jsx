@@ -18,6 +18,84 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// České státní svátky
+const czechHolidays = {
+  2024: {
+    '2024-01-01': 'Nový rok',
+    '2024-04-01': 'Velikonoční pondělí',
+    '2024-05-01': 'Svátek práce',
+    '2024-05-08': 'Den vítězství',
+    '2024-07-05': 'Den Cyrila a Metoděje',
+    '2024-07-06': 'Den Jana Husa',
+    '2024-09-28': 'Den české státnosti',
+    '2024-10-28': 'Den vzniku ČSR',
+    '2024-11-17': 'Den boje za svobodu',
+    '2024-12-24': 'Štědrý den',
+    '2024-12-25': '1. svátek vánoční',
+    '2024-12-26': '2. svátek vánoční'
+  },
+  2025: {
+    '2025-01-01': 'Nový rok',
+    '2025-04-21': 'Velikonoční pondělí',
+    '2025-05-01': 'Svátek práce',
+    '2025-05-08': 'Den vítězství',
+    '2025-07-05': 'Den Cyrila a Metoděje',
+    '2025-07-06': 'Den Jana Husa',
+    '2025-09-28': 'Den české státnosti',
+    '2025-10-28': 'Den vzniku ČSR',
+    '2025-11-17': 'Den boje za svobodu',
+    '2025-12-24': 'Štědrý den',
+    '2025-12-25': '1. svátek vánoční',
+    '2025-12-26': '2. svátek vánoční'
+  },
+  2026: {
+    '2026-01-01': 'Nový rok',
+    '2026-04-06': 'Velikonoční pondělí',
+    '2026-05-01': 'Svátek práce',
+    '2026-05-08': 'Den vítězství',
+    '2026-07-05': 'Den Cyrila a Metoděje',
+    '2026-07-06': 'Den Jana Husa',
+    '2026-09-28': 'Den české státnosti',
+    '2026-10-28': 'Den vzniku ČSR',
+    '2026-11-17': 'Den boje za svobodu',
+    '2026-12-24': 'Štědrý den',
+    '2026-12-25': '1. svátek vánoční',
+    '2026-12-26': '2. svátek vánoční'
+  }
+};
+
+const getHolidayName = (date) => {
+  const year = date.getFullYear();
+  const dateStr = date.toISOString().split('T')[0];
+  return czechHolidays[year]?.[dateStr] || null;
+};
+
+const isWeekend = (date) => {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+};
+
+const isHoliday = (date) => {
+  return getHolidayName(date) !== null;
+};
+
+// Výpočet pracovních dnů (bez víkendů a svátků)
+const calculateWorkingDays = (startDate, endDate) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let workingDays = 0;
+  
+  const currentDate = new Date(start);
+  while (currentDate <= end) {
+    if (!isWeekend(currentDate) && !isHoliday(currentDate)) {
+      workingDays++;
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return workingDays;
+};
+
 const VacationTracker = () => {
   const [vacations, setVacations] = useState([]);
   const [currentUser, setCurrentUser] = useState('');
@@ -46,7 +124,6 @@ const VacationTracker = () => {
   useEffect(() => {
     loadCurrentUser();
     
-    // Realtime listener pro Firestore
     const unsubscribe = onSnapshot(collection(db, 'vacations'), (snapshot) => {
       const vacationData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -106,7 +183,7 @@ const VacationTracker = () => {
     const allVacations = [...vacations].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
     let csv = '\uFEFF';
-    csv += 'Jméno,Typ volna,Od,Do,Počet dní,Stav\n';
+    csv += 'Jméno,Typ volna,Od,Do,Počet pracovních dní,Stav\n';
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -153,13 +230,15 @@ const VacationTracker = () => {
 
     saveCurrentUser(formData.employee);
 
+    const workingDays = calculateWorkingDays(formData.startDate, formData.endDate);
+
     const newVacation = {
       employee: formData.employee,
       startDate: formData.startDate,
       endDate: formData.endDate,
       type: formData.type,
       createdAt: new Date().toISOString(),
-      days: Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
+      days: workingDays
     };
 
     try {
@@ -204,14 +283,14 @@ const VacationTracker = () => {
       return;
     }
 
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    const workingDays = calculateWorkingDays(editData.startDate, editData.endDate);
 
     try {
       await updateDoc(doc(db, 'vacations', vacationId), {
         startDate: editData.startDate,
         endDate: editData.endDate,
         type: editData.type,
-        days: days
+        days: workingDays
       });
       setEditingId(null);
       showNotification('Záznam byl upraven', 'success');
@@ -374,10 +453,11 @@ const VacationTracker = () => {
           {weekDays.map((date, idx) => {
             const dayVacations = currentVacations.filter(v => isInRange(v, date));
             const isToday = date.toDateString() === new Date().toDateString();
-            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+            const isWeekendDay = isWeekend(date);
+            const holidayName = getHolidayName(date);
 
             return (
-              <div key={idx} className={`min-h-32 border rounded-lg p-2 ${isToday ? 'border-blue-500 border-2 bg-blue-50' : isWeekend ? 'bg-gray-50' : 'bg-white'}`}>
+              <div key={idx} className={`min-h-32 border rounded-lg p-2 ${isToday ? 'border-blue-500 border-2 bg-blue-50' : (isWeekendDay || holidayName) ? 'bg-gray-50' : 'bg-white'}`}>
                 <div className="text-center mb-2">
                   <div className="text-xs font-medium text-gray-600">
                     {date.toLocaleDateString('cs-CZ', { weekday: 'short' })}
@@ -385,6 +465,11 @@ const VacationTracker = () => {
                   <div className={`text-lg font-bold ${isToday ? 'text-blue-600' : 'text-gray-800'}`}>
                     {date.getDate()}
                   </div>
+                  {holidayName && (
+                    <div className="text-xs text-gray-500 mt-1 font-medium">
+                      {holidayName}
+                    </div>
+                  )}
                 </div>
                 
                 <div className="space-y-1">
@@ -452,7 +537,8 @@ const VacationTracker = () => {
               const dayVacations = currentVacations.filter(v => isInRange(v, date));
               const isToday = date.toDateString() === new Date().toDateString();
               const isCurrentMonth = date.getMonth() === month;
-              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+              const isWeekendDay = isWeekend(date);
+              const holidayName = getHolidayName(date);
 
               return (
                 <div 
@@ -460,21 +546,27 @@ const VacationTracker = () => {
                   className={`min-h-24 border rounded p-1 ${
                     isToday ? 'border-blue-500 border-2 bg-blue-50' : 
                     !isCurrentMonth ? 'bg-gray-100 text-gray-400' :
-                    isWeekend ? 'bg-gray-50' : 'bg-white'
+                    (isWeekendDay || holidayName) ? 'bg-gray-50' : 'bg-white'
                   }`}
                 >
                   <div className={`text-xs font-bold mb-1 ${isToday ? 'text-blue-600' : isCurrentMonth ? 'text-gray-800' : 'text-gray-400'}`}>
                     {date.getDate()}
                   </div>
                   
+                  {holidayName && (
+                    <div className="text-xs text-gray-500 mb-1 font-medium leading-tight">
+                      {holidayName}
+                    </div>
+                  )}
+                  
                   <div className="space-y-0.5">
-                    {dayVacations.slice(0, 3).map(vacation => (
+                    {dayVacations.slice(0, 2).map(vacation => (
                       <div key={vacation.id} className={`text-xs px-1 rounded border-l-2 ${getTypeColor(vacation.type)} ${getTypeBorderColor(vacation.type)} truncate`}>
                         {vacation.employee.split(' ')[0]}
                       </div>
                     ))}
-                    {dayVacations.length > 3 && (
-                      <div className="text-xs text-gray-500 px-1">+{dayVacations.length - 3}</div>
+                    {dayVacations.length > 2 && (
+                      <div className="text-xs text-gray-500 px-1">+{dayVacations.length - 2}</div>
                     )}
                   </div>
                 </div>
@@ -848,7 +940,7 @@ const VacationTracker = () => {
                                   <span className="font-medium">{formatDate(vacation.startDate)} - {formatDate(vacation.endDate)}</span>
                                 </div>
                                 <div className="font-semibold text-blue-600">
-                                  {vacation.days} {vacation.days === 1 ? 'den' : vacation.days < 5 ? 'dny' : 'dní'}
+                                  {vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}
                                 </div>
                               </div>
                             </div>
@@ -908,7 +1000,7 @@ const VacationTracker = () => {
                       {employeeStats.map(([name, days]) => (
                         <div key={name} className="bg-white rounded-lg p-4 shadow">
                           <div className="font-semibold text-gray-800">{name}</div>
-                          <div className="text-2xl font-bold text-purple-600">{days} {days === 1 ? 'den' : days < 5 ? 'dny' : 'dní'}</div>
+                          <div className="text-2xl font-bold text-purple-600">{days} {days === 1 ? 'pracovní den' : days < 5 ? 'pracovní dny' : 'pracovních dní'}</div>
                         </div>
                       ))}
                     </div>
@@ -938,7 +1030,7 @@ const VacationTracker = () => {
                           </div>
                           <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                             <span>{formatDate(vacation.startDate)} - {formatDate(vacation.endDate)}</span>
-                            <span className="font-medium">{vacation.days} {vacation.days === 1 ? 'den' : vacation.days < 5 ? 'dny' : 'dní'}</span>
+                            <span className="font-medium">{vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}</span>
                           </div>
                         </div>
                         <button
@@ -966,6 +1058,8 @@ const VacationTracker = () => {
             <li>• <strong>Kontrola překryvů:</strong> Systém nedovolí zadat duplicitní záznamy</li>
             <li>• <strong>Přepínej zobrazení:</strong> Týden / Měsíc / Seznam</li>
             <li>• <strong>Pouze admin</strong> vidí statistiky čerpání, historii a může exportovat data</li>
+            <li>• <strong>Svátky a víkendy</strong> jsou zvýrazněny šedou barvou v kalendáři</li>
+            <li>• <strong>Počet dní:</strong> Počítají se pouze pracovní dny (bez víkendů a svátků)</li>
             <li>• Zadávej své jméno vždy stejně, aby ti systém poznal tvoje dovolené</li>
           </ul>
         </div>
