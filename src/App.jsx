@@ -77,7 +77,7 @@ const VacationTracker = () => {
 
   const addVacation = () => {
     if (!formData.employee || !formData.startDate || !formData.endDate) {
-      alert('Vyplň všechna pole');
+      alert('❌ Vyplň prosím všechna pole');
       return;
     }
 
@@ -105,6 +105,7 @@ const VacationTracker = () => {
     saveVacations(updatedVacations);
     
     setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
+    alert('✅ Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.');
   };
 
   const startEdit = (vacation) => {
