@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, History, Users, Trash2, Lock, Edit2, X, Save, ChevronLeft, ChevronRight, List, Download, CheckCircle, XCircle } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot } from 'firebase/firestore';
+
+// Firebase konfigurace
+const firebaseConfig = {
+  apiKey: "AIzaSyBdJaRu4hS5-SdK2WidwtSzY8XuuJjidP0",
+  authDomain: "evidence-dovolena.firebaseapp.com",
+  projectId: "evidence-dovolena",
+  storageBucket: "evidence-dovolena.firebasestorage.app",
+  messagingSenderId: "160354356746",
+  appId: "1:160354356746:web:c67b34827998a70afb19f3",
+  measurementId: "G-X6ZLBF9M6J"
+};
+
+// Inicializace Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const VacationTracker = () => {
   const [vacations, setVacations] = useState([]);
@@ -27,8 +44,19 @@ const VacationTracker = () => {
   });
 
   useEffect(() => {
-    loadVacations();
     loadCurrentUser();
+    
+    // Realtime listener pro Firestore
+    const unsubscribe = onSnapshot(collection(db, 'vacations'), (snapshot) => {
+      const vacationData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setVacations(vacationData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const loadCurrentUser = () => {
@@ -42,28 +70,6 @@ const VacationTracker = () => {
   const saveCurrentUser = (name) => {
     localStorage.setItem('currentUserName', name);
     setCurrentUser(name);
-  };
-
-  const loadVacations = async () => {
-    try {
-      const result = await window.storage.get('team-vacations', true);
-      if (result && result.value) {
-        setVacations(JSON.parse(result.value));
-      }
-    } catch (error) {
-      console.log('Zatím nejsou žádné dovolené');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveVacations = async (updatedVacations) => {
-    try {
-      await window.storage.set('team-vacations', JSON.stringify(updatedVacations), true);
-      setVacations(updatedVacations);
-    } catch (error) {
-      showNotification('Chyba při ukládání dat', 'error');
-    }
   };
 
   const showNotification = (message, type = 'success') => {
@@ -126,7 +132,7 @@ const VacationTracker = () => {
     showNotification('Data byla exportována', 'success');
   };
 
-  const addVacation = () => {
+  const addVacation = async () => {
     if (!formData.employee || !formData.startDate || !formData.endDate) {
       showNotification('Vyplň prosím všechna povinná pole', 'error');
       return;
@@ -148,7 +154,6 @@ const VacationTracker = () => {
     saveCurrentUser(formData.employee);
 
     const newVacation = {
-      id: Date.now(),
       employee: formData.employee,
       startDate: formData.startDate,
       endDate: formData.endDate,
@@ -157,11 +162,13 @@ const VacationTracker = () => {
       days: Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
     };
 
-    const updatedVacations = [...vacations, newVacation];
-    saveVacations(updatedVacations);
-    
-    setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
-    showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
+    try {
+      await addDoc(collection(db, 'vacations'), newVacation);
+      setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
+      showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
+    } catch (error) {
+      showNotification('Chyba při ukládání dat', 'error');
+    }
   };
 
   const startEdit = (vacation) => {
@@ -178,7 +185,7 @@ const VacationTracker = () => {
     setEditData({ startDate: '', endDate: '', type: 'dovolena' });
   };
 
-  const saveEdit = (vacationId) => {
+  const saveEdit = async (vacationId) => {
     if (!editData.startDate || !editData.endDate) {
       showNotification('Vyplň všechna pole', 'error');
       return;
@@ -199,22 +206,28 @@ const VacationTracker = () => {
 
     const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
-    const updatedVacations = vacations.map(v => 
-      v.id === vacationId 
-        ? { ...v, startDate: editData.startDate, endDate: editData.endDate, type: editData.type, days }
-        : v
-    );
-
-    saveVacations(updatedVacations);
-    setEditingId(null);
-    showNotification('Záznam byl upraven', 'success');
+    try {
+      await updateDoc(doc(db, 'vacations', vacationId), {
+        startDate: editData.startDate,
+        endDate: editData.endDate,
+        type: editData.type,
+        days: days
+      });
+      setEditingId(null);
+      showNotification('Záznam byl upraven', 'success');
+    } catch (error) {
+      showNotification('Chyba při úpravě', 'error');
+    }
   };
 
-  const deleteVacation = (id) => {
+  const deleteVacation = async (id) => {
     if (confirm('Opravdu smazat tento záznam?')) {
-      const updatedVacations = vacations.filter(v => v.id !== id);
-      saveVacations(updatedVacations);
-      showNotification('Záznam byl smazán', 'success');
+      try {
+        await deleteDoc(doc(db, 'vacations', id));
+        showNotification('Záznam byl smazán', 'success');
+      } catch (error) {
+        showNotification('Chyba při mazání', 'error');
+      }
     }
   };
 
