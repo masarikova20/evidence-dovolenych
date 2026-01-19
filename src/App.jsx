@@ -115,6 +115,7 @@ const VacationTracker = () => {
   const [viewMode, setViewMode] = useState('list');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [notification, setNotification] = useState(null);
+  const [showNewEmployeeInput, setShowNewEmployeeInput] = useState(false);
   
   const [formData, setFormData] = useState({
     employee: '',
@@ -270,6 +271,7 @@ const VacationTracker = () => {
         endDate: '', 
         type: 'dovolena' 
       });
+      setShowNewEmployeeInput(false); // Reset admin inputu
       showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
     } catch (error) {
       showNotification('Chyba při ukládání dat', 'error');
@@ -710,17 +712,50 @@ const VacationTracker = () => {
                     {isAdmin ? 'Zaměstnanec *' : 'Tvoje jméno *'}
                   </label>
                   {isAdmin ? (
-                    <select
-                      value={formData.employee}
-                      onChange={(e) => setFormData({...formData, employee: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                    >
-                      <option value="">-- Vyber zaměstnance --</option>
-                      {uniqueEmployees.map(emp => (
-                        <option key={emp} value={emp}>{emp}</option>
-                      ))}
-                      <option value="__new__">➕ Přidat nového zaměstnance</option>
-                    </select>
+                    <>
+                      {!showNewEmployeeInput ? (
+                        <select
+                          value={formData.employee}
+                          onChange={(e) => {
+                            if (e.target.value === '__new__') {
+                              setShowNewEmployeeInput(true);
+                              setFormData({...formData, employee: ''});
+                            } else {
+                              setFormData({...formData, employee: e.target.value});
+                            }
+                          }}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        >
+                          <option value="">-- Vyber zaměstnance --</option>
+                          {uniqueEmployees.map(emp => (
+                            <option key={emp} value={emp}>{emp}</option>
+                          ))}
+                          <option value="__new__">➕ Zadat nové jméno ručně</option>
+                        </select>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={formData.employee}
+                            onChange={(e) => setFormData({...formData, employee: e.target.value})}
+                            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Zadej jméno nového zaměstnance"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowNewEmployeeInput(false);
+                              setFormData({...formData, employee: ''});
+                            }}
+                            className="px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                            title="Zpět na výběr ze seznamu"
+                          >
+                            ↩️
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <input
                       type="text"
@@ -728,14 +763,6 @@ const VacationTracker = () => {
                       onChange={(e) => setFormData({...formData, employee: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Např. Jana Nováková"
-                    />
-                  )}
-                  {isAdmin && formData.employee === '__new__' && (
-                    <input
-                      type="text"
-                      onChange={(e) => setFormData({...formData, employee: e.target.value})}
-                      className="w-full mt-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Jméno nového zaměstnance"
                     />
                   )}
                   {!isAdmin && (
