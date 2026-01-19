@@ -82,7 +82,13 @@ const isHoliday = (date) => {
 };
 
 // Výpočet pracovních dnů (bez víkendů a svátků)
-const calculateWorkingDays = (startDate, endDate) => {
+// Pro půldenní dovolené vrací 0.5 dne (4 hodiny)
+const calculateWorkingDays = (startDate, endDate, vacationType) => {
+  // Pro půldenní dovolené vrátíme 0.5 dne (4 hodiny)
+  if (vacationType === 'dopoledne' || vacationType === 'odpoledne') {
+    return 0.5;
+  }
+  
   const start = new Date(startDate);
   const end = new Date(endDate);
   let workingDays = 0;
@@ -161,20 +167,24 @@ const VacationTracker = () => {
       setIsAdmin(true);
       setShowAdminLogin(false);
       setAdminPassword('');
+      showNotification('Přihlášen jako admin', 'success');
     } else {
       showNotification('Nesprávné heslo', 'error');
     }
   };
 
-  const checkOverlap = (newStart, newEnd, excludeId = null) => {
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    showNotification('Odhlášen z admin režimu', 'success');
+  };
+
+  const checkOverlap = (newStart, newEnd, employeeName, excludeId = null) => {
     const start = new Date(newStart);
     const end = new Date(newEnd);
     
-    const userName = currentUser || localStorage.getItem('currentUserName') || '';
-    
     return vacations.some(vacation => {
       if (excludeId && vacation.id === excludeId) return false;
-      if (vacation.employee.toLowerCase() !== userName.toLowerCase()) return false;
+      if (vacation.employee.toLowerCase() !== employeeName.toLowerCase()) return false;
       
       const vStart = new Date(vacation.startDate);
       const vEnd = new Date(vacation.endDate);
@@ -213,6 +223,9 @@ const VacationTracker = () => {
     showNotification('Data byla exportována', 'success');
   };
 
+  // Získání unikátních zaměstnanců pro admin dropdown
+  const uniqueEmployees = [...new Set(vacations.map(v => v.employee))].sort();
+
   const addVacation = async () => {
     if (!formData.employee || !formData.startDate || !formData.endDate) {
       showNotification('Vyplň prosím všechna povinná pole', 'error');
@@ -227,14 +240,17 @@ const VacationTracker = () => {
       return;
     }
 
-    if (checkOverlap(formData.startDate, formData.endDate)) {
-      showNotification('Pro tento termín již máš zadanou nedostupnost. Proveď editaci v záložce Seznam.', 'error');
+    if (checkOverlap(formData.startDate, formData.endDate, formData.employee)) {
+      showNotification('Pro tento termín již má tento zaměstnanec zadanou nedostupnost. Proveď editaci v záložce Seznam.', 'error');
       return;
     }
 
-    saveCurrentUser(formData.employee);
+    // Uložit jméno pokud není admin (admin neukládá své jméno)
+    if (!isAdmin) {
+      saveCurrentUser(formData.employee);
+    }
 
-    const workingDays = calculateWorkingDays(formData.startDate, formData.endDate);
+    const workingDays = calculateWorkingDays(formData.startDate, formData.endDate, formData.type);
 
     const newVacation = {
       employee: formData.employee,
@@ -247,7 +263,13 @@ const VacationTracker = () => {
 
     try {
       await addDoc(collection(db, 'vacations'), newVacation);
-      setFormData({ ...formData, startDate: '', endDate: '', type: 'dovolena' });
+      // Reset formuláře - v admin režimu vynulujeme i zaměstnance
+      setFormData({ 
+        employee: isAdmin ? '' : formData.employee, 
+        startDate: '', 
+        endDate: '', 
+        type: 'dovolena' 
+      });
       showNotification('Záznam byl úspěšně zaznamenán. Editovat ho můžeš v záložce Seznam.', 'success');
     } catch (error) {
       showNotification('Chyba při ukládání dat', 'error');
@@ -268,7 +290,7 @@ const VacationTracker = () => {
     setEditData({ startDate: '', endDate: '', type: 'dovolena' });
   };
 
-  const saveEdit = async (vacationId) => {
+  const saveEdit = async (vacationId, employeeName) => {
     if (!editData.startDate || !editData.endDate) {
       showNotification('Vyplň všechna pole', 'error');
       return;
@@ -282,12 +304,12 @@ const VacationTracker = () => {
       return;
     }
 
-    if (checkOverlap(editData.startDate, editData.endDate, vacationId)) {
-      showNotification('Pro tento termín již máš zadanou nedostupnost.', 'error');
+    if (checkOverlap(editData.startDate, editData.endDate, employeeName, vacationId)) {
+      showNotification('Pro tento termín již má tento zaměstnanec zadanou nedostupnost.', 'error');
       return;
     }
 
-    const workingDays = calculateWorkingDays(editData.startDate, editData.endDate);
+    const workingDays = calculateWorkingDays(editData.startDate, editData.endDate, editData.type);
 
     try {
       await updateDoc(doc(db, 'vacations', vacationId), {
@@ -615,18 +637,18 @@ const VacationTracker = () => {
               <div>
                 <h1 className="text-3xl md:text-4xl font-bold mb-2">Evidence dovolených</h1>
                 <p className="text-blue-100">Týmový přehled volna</p>
-                {currentUser && (
+                {currentUser && !isAdmin && (
                   <p className="text-sm mt-2 bg-white/20 inline-block px-3 py-1 rounded-full">
                     Přihlášen: {currentUser}
                   </p>
                 )}
+                {isAdmin && (
+                  <p className="text-sm mt-2 bg-yellow-400 text-gray-900 inline-block px-3 py-1 rounded-full font-semibold">
+                    🔑 Admin režim
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-4">
-                {isAdmin && (
-                  <div className="text-sm bg-white/20 px-3 py-1 rounded-full">
-                    Admin režim
-                  </div>
-                )}
                 <Calendar className="w-12 h-12 md:w-16 md:h-16 opacity-80" />
               </div>
             </div>
@@ -639,13 +661,21 @@ const VacationTracker = () => {
                   <Plus className="w-6 h-6 text-blue-600" />
                   Zadat novou dovolenou
                 </h2>
-                {!isAdmin && (
+                {!isAdmin ? (
                   <button
                     onClick={() => setShowAdminLogin(!showAdminLogin)}
                     className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                   >
                     <Lock className="w-4 h-4" />
                     Admin přístup
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleAdminLogout}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    <Lock className="w-4 h-4" />
+                    Odhlásit admin
                   </button>
                 )}
               </div>
@@ -677,16 +707,40 @@ const VacationTracker = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tvoje jméno *
+                    {isAdmin ? 'Zaměstnanec *' : 'Tvoje jméno *'}
                   </label>
-                  <input
-                    type="text"
-                    value={formData.employee}
-                    onChange={(e) => setFormData({...formData, employee: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Např. Jana Nováková"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Zadej své jméno stejně pokaždé - budeš moci editovat jen své dovolené</p>
+                  {isAdmin ? (
+                    <select
+                      value={formData.employee}
+                      onChange={(e) => setFormData({...formData, employee: e.target.value})}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    >
+                      <option value="">-- Vyber zaměstnance --</option>
+                      {uniqueEmployees.map(emp => (
+                        <option key={emp} value={emp}>{emp}</option>
+                      ))}
+                      <option value="__new__">➕ Přidat nového zaměstnance</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.employee}
+                      onChange={(e) => setFormData({...formData, employee: e.target.value})}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Např. Jana Nováková"
+                    />
+                  )}
+                  {isAdmin && formData.employee === '__new__' && (
+                    <input
+                      type="text"
+                      onChange={(e) => setFormData({...formData, employee: e.target.value})}
+                      className="w-full mt-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Jméno nového zaměstnance"
+                    />
+                  )}
+                  {!isAdmin && (
+                    <p className="text-xs text-gray-500 mt-1">Zadej své jméno stejně pokaždé - budeš moci editovat jen své dovolené</p>
+                  )}
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
@@ -725,8 +779,8 @@ const VacationTracker = () => {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                   >
                     <option value="dovolena">Dovolená/Nedostupnost</option>
-                    <option value="dopoledne">Dovolená - dopoledne</option>
-                    <option value="odpoledne">Dovolená - odpoledne</option>
+                    <option value="dopoledne">Dovolená - dopoledne (0.5 dne = 4h)</option>
+                    <option value="odpoledne">Dovolená - odpoledne (0.5 dne = 4h)</option>
                     <option value="skoleni">Školení</option>
                     <option value="workshop">Holdingový workshop</option>
                     <option value="potencialni">Potencionální dovolená</option>
@@ -815,11 +869,11 @@ const VacationTracker = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-pink-300 rounded"></div>
-                    <span>Dopoledne dovolená</span>
+                    <span>Dopoledne (0.5 dne)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-green-300 rounded"></div>
-                    <span>Odpoledne dovolená</span>
+                    <span>Odpoledne (0.5 dne)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-purple-500 rounded"></div>
@@ -900,8 +954,8 @@ const VacationTracker = () => {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                               >
                                 <option value="dovolena">Dovolená/Nedostupnost</option>
-                                <option value="dopoledne">Dovolená - dopoledne</option>
-                                <option value="odpoledne">Dovolená - odpoledne</option>
+                                <option value="dopoledne">Dovolená - dopoledne (0.5 dne)</option>
+                                <option value="odpoledne">Dovolená - odpoledne (0.5 dne)</option>
                                 <option value="skoleni">Školení</option>
                                 <option value="workshop">Holdingový workshop</option>
                                 <option value="potencialni">Potencionální dovolená</option>
@@ -910,7 +964,7 @@ const VacationTracker = () => {
 
                             <div className="flex gap-2">
                               <button
-                                onClick={() => saveEdit(vacation.id)}
+                                onClick={() => saveEdit(vacation.id, vacation.employee)}
                                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
                               >
                                 <Save className="w-4 h-4" />
@@ -947,7 +1001,7 @@ const VacationTracker = () => {
                                   <span className="font-medium">{formatDate(vacation.startDate)} - {formatDate(vacation.endDate)}</span>
                                 </div>
                                 <div className="font-semibold text-blue-600">
-                                  {vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}
+                                  {vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days === 0.5 ? 'pracovního dne (4h)' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}
                                 </div>
                               </div>
                             </div>
@@ -1007,7 +1061,9 @@ const VacationTracker = () => {
                       {employeeStats.map(([name, days]) => (
                         <div key={name} className="bg-white rounded-lg p-4 shadow">
                           <div className="font-semibold text-gray-800">{name}</div>
-                          <div className="text-2xl font-bold text-purple-600">{days} {days === 1 ? 'pracovní den' : days < 5 ? 'pracovní dny' : 'pracovních dní'}</div>
+                          <div className="text-2xl font-bold text-purple-600">
+                            {days} {days === 1 ? 'pracovní den' : days === 0.5 ? 'pracovního dne' : days < 5 ? 'pracovní dny' : 'pracovních dní'}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1037,7 +1093,9 @@ const VacationTracker = () => {
                           </div>
                           <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                             <span>{formatDate(vacation.startDate)} - {formatDate(vacation.endDate)}</span>
-                            <span className="font-medium">{vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}</span>
+                            <span className="font-medium">
+                              {vacation.days} {vacation.days === 1 ? 'pracovní den' : vacation.days === 0.5 ? 'pracovního dne (4h)' : vacation.days < 5 ? 'pracovní dny' : 'pracovních dní'}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -1061,12 +1119,14 @@ const VacationTracker = () => {
           <ul className="space-y-1 ml-4">
             <li>• <strong>Všichni</strong> vidí aktuální a plánované dovolené</li>
             <li>• <strong>Všichni</strong> mohou zadávat nové dovolené pomocí formuláře</li>
+            <li>• <strong>Admin může přidávat</strong> dovolené za kohokoliv z týmu</li>
             <li>• <strong>Můžeš editovat/rušit</strong> pouze své dovolené (dokud neuplynou)</li>
             <li>• <strong>Kontrola překryvů:</strong> Systém nedovolí zadat duplicitní záznamy</li>
             <li>• <strong>Přepínej zobrazení:</strong> Týden / Měsíc / Seznam</li>
             <li>• <strong>Pouze admin</strong> vidí statistiky čerpání, historii a může exportovat data</li>
             <li>• <strong>Svátky a víkendy</strong> jsou zvýrazněny šedou barvou v kalendáři</li>
             <li>• <strong>Počet dní:</strong> Počítají se pouze pracovní dny (bez víkendů a svátků)</li>
+            <li>• <strong>Půldenní dovolená:</strong> Dopoledne/Odpoledne = 0.5 dne (4 hodiny)</li>
             <li>• Zadávej své jméno vždy stejně, aby ti systém poznal tvoje dovolené</li>
           </ul>
         </div>
