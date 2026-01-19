@@ -1072,13 +1072,70 @@ const VacationTracker = () => {
                       Pouze admin
                     </span>
                   </div>
-                  <button
-                    onClick={exportToExcel}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                  >
-                    <Download className="w-5 h-5" />
-                    Stáhnout data (Excel)
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Tato akce opraví:\n\n1. Sloučí duplicitní jména:\n   - "Dominik" → "Dominik Mathauser"\n\n2. Odstraní neviditelné znaky a extra mezery ze všech jmen\n\n3. Přepočítá všechny půldenní dovolené z 1 dne na 0.5 dne\n\nPokračovat?')) {
+                          return;
+                        }
+
+                        try {
+                          let fixed = 0;
+                          
+                          // Pravidla pro sloučení jmen
+                          const nameMapping = {
+                            'Dominik': 'Dominik Mathauser'
+                          };
+
+                          for (const vacation of vacations) {
+                            let needsUpdate = false;
+                            let newData = {};
+
+                            // 1. Normalizace jména (odstranění extra mezer a neviditelných znaků)
+                            let normalizedName = vacation.employee.trim().replace(/\s+/g, ' ');
+                            
+                            // 2. Aplikace mapování
+                            if (nameMapping[normalizedName]) {
+                              normalizedName = nameMapping[normalizedName];
+                            }
+                            
+                            if (normalizedName !== vacation.employee) {
+                              newData.employee = normalizedName;
+                              needsUpdate = true;
+                            }
+
+                            // 3. Oprava půldenních dovolených
+                            if ((vacation.type === 'dopoledne' || vacation.type === 'odpoledne') && vacation.days !== 0.5) {
+                              newData.days = 0.5;
+                              needsUpdate = true;
+                            }
+
+                            // Aktualizuj záznam, pokud je potřeba
+                            if (needsUpdate) {
+                              await updateDoc(doc(db, 'vacations', vacation.id), newData);
+                              fixed++;
+                            }
+                          }
+
+                          showNotification(`Opraveno ${fixed} záznamů!`, 'success');
+                        } catch (error) {
+                          showNotification('Chyba při opravě dat', 'error');
+                          console.error(error);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
+                      title="Opraví duplicitní jména a přepočítá půldenní dovolené"
+                    >
+                      🔧 Opravit data
+                    </button>
+                    <button
+                      onClick={exportToExcel}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                    >
+                      <Download className="w-5 h-5" />
+                      Stáhnout data (Excel)
+                    </button>
+                  </div>
                 </div>
 
                 {employeeStats.length > 0 && (
